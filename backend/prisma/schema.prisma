@@ -1,0 +1,283 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+
+enum Role {
+  CUSTOMER
+  PROVIDER
+  ADMIN
+}
+
+enum BookingStatus {
+  PENDING
+  ASSIGNED
+  EN_ROUTE
+  ARRIVED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  DISPUTED
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+}
+
+model User {
+  id            String    @id @default(uuid())
+  firebaseUid   String    @unique
+  name          String?
+  email         String?   @unique
+  phone         String?   @unique
+  avatarUrl     String?
+  role          Role      @default(CUSTOMER)
+  city          String?
+  isActive      Boolean   @default(true)
+  isVerified    Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  vehicles      Vehicle[]
+  bookings      Booking[]
+  reviews       Review[]
+  notifications Notification[]
+  supportTickets SupportTicket[]
+  subscriptions Subscription[]
+  provider      Provider?
+}
+
+model Vehicle {
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id])
+  make           String
+  model          String
+  year           Int?
+  fuelType       String?
+  registrationNo String    @unique
+  color          String?
+  createdAt      DateTime  @default(now())
+  bookings       Booking[]
+}
+
+model Provider {
+  id                String             @id @default(uuid())
+  userId            String             @unique
+  user              User               @relation(fields: [userId], references: [id])
+  businessName      String
+  gstNumber         String?
+  bio               String?
+  avgRating         Float              @default(0)
+  totalJobs         Int                @default(0)
+  serviceRadiusKm   Float              @default(10)
+  lat               Float?
+  lng               Float?
+  isAvailable       Boolean            @default(false)
+  verificationStatus VerificationStatus @default(PENDING)
+  joinedAt          DateTime           @default(now())
+  bankDetails       String?            // Encrypted string
+
+  services          ProviderService[]
+  bookings          Booking[]
+  reviews           Review[]
+  products          Product[]
+  payouts           Payout[]
+  selfWashBays      SelfWashBay[]
+}
+
+model ServiceCategory {
+  id               String            @id @default(uuid())
+  name             String            @unique
+  iconUrl          String?
+  basePriceMin     Float
+  basePriceMax     Float
+  avgDurationMins  Int
+  providerServices ProviderService[]
+  bookings         Booking[]
+}
+
+model ProviderService {
+  id                String          @id @default(uuid())
+  providerId        String
+  provider          Provider        @relation(fields: [providerId], references: [id])
+  categoryId        String
+  category          ServiceCategory @relation(fields: [categoryId], references: [id])
+  serviceName       String
+  description       String?
+  basePrice         Float
+  unit              String          @default("per_job") // per_job, per_hour, per_wash
+  isActive          Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+}
+
+model Booking {
+  id               String          @id @default(uuid())
+  customerId       String
+  customer         User            @relation(fields: [customerId], references: [id])
+  providerId       String?
+  provider         Provider?       @relation(fields: [providerId], references: [id])
+  vehicleId        String?
+  vehicle          Vehicle?        @relation(fields: [vehicleId], references: [id])
+  serviceCategoryId String
+  serviceCategory  ServiceCategory @relation(fields: [serviceCategoryId], references: [id])
+  
+  status           BookingStatus   @default(PENDING)
+  bookingType      String          @default("on_demand") // on_demand, scheduled, self_wash
+  locationAddress  String
+  locationLat      Float
+  locationLng      Float
+  scheduledAt      DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  totalAmount      Float
+  platformFee      Float
+  providerPayout   Float
+  paymentStatus    String          @default("pending") // pending, paid, refunded
+  paymentMethod    String?
+  otpVerified      Boolean         @default(false)
+  customerNotes    String?
+  createdAt        DateTime        @default(now())
+
+  review           Review?
+  washBaySlot      WashBaySlot?
+}
+
+model SelfWashBay {
+  id                String       @id @default(uuid())
+  providerId        String
+  provider          Provider     @relation(fields: [providerId], references: [id])
+  name              String
+  address           String
+  lat               Float
+  lng               Float
+  totalSlots        Int
+  pricePerSlot      Float
+  slotDurationMins  Int          @default(30)
+  operatingHours    String
+  isActive          Boolean      @default(true)
+  slots             WashBaySlot[]
+}
+
+model WashBaySlot {
+  id              String       @id @default(uuid())
+  bayId           String
+  bay             SelfWashBay  @relation(fields: [bayId], references: [id])
+  slotDate        DateTime
+  slotTime        String
+  isBooked        Boolean      @default(false)
+  bookingId       String?      @unique
+  booking         Booking?     @relation(fields: [bookingId], references: [id])
+  qrCodeToken     String?
+  qrExpiresAt     DateTime?
+}
+
+model Review {
+  id          String    @id @default(uuid())
+  bookingId   String    @unique
+  booking     Booking   @relation(fields: [bookingId], references: [id])
+  customerId  String
+  customer    User      @relation(fields: [customerId], references: [id])
+  providerId  String
+  provider    Provider  @relation(fields: [providerId], references: [id])
+  rating      Int
+  comment     String?
+  createdAt   DateTime  @default(now())
+}
+
+model Product {
+  id          String    @id @default(uuid())
+  providerId  String
+  provider    Provider  @relation(fields: [providerId], references: [id])
+  name        String
+  description String?
+  category    String    // tyre, lubricant, battery, etc.
+  price       Float
+  stockQty    Int
+  imageUrl    String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  orders      Order[]
+}
+
+model Order {
+  id              String    @id @default(uuid())
+  customerId      String
+  productId       String
+  product         Product   @relation(fields: [productId], references: [id])
+  quantity        Int
+  totalPrice      Float
+  deliveryAddress String
+  status          String    @default("pending")
+  createdAt       DateTime  @default(now())
+}
+
+model Subscription {
+  id                    String   @id @default(uuid())
+  customerId            String
+  customer              User     @relation(fields: [customerId], references: [id])
+  planType              String   // basic_wash, pro_care, fleet
+  price                 Float
+  billingCycle          String   // monthly, annual
+  servicesRemaining     Int
+  validFrom             DateTime
+  validUntil            DateTime
+  isActive              Boolean  @default(true)
+  razorpaySubscriptionId String?
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  type      String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+}
+
+model Payout {
+  id            String       @id @default(uuid())
+  providerId    String
+  provider      Provider     @relation(fields: [providerId], references: [id])
+  amount        Float
+  periodStart   DateTime
+  periodEnd     DateTime
+  status        PayoutStatus @default(PENDING)
+  paymentRef    String?
+  createdAt     DateTime     @default(now())
+}
+
+model SupportTicket {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  bookingId   String?
+  subject     String
+  description String
+  status      String   @default("open") // open, in_progress, resolved, closed
+  priority    String   @default("medium")
+  createdAt   DateTime @default(now())
+  resolvedAt  DateTime?
+}
